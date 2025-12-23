@@ -211,51 +211,51 @@ def courier_list(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def courier_pdf(request, courier_id):
-    """
-    Download courier PDF (accessible to admin & assigned technicians)
-    Returns PDF URL and metadata
-    """
-    try:
-        courier = CourierTransaction.objects.get(id=courier_id)
+# @api_view(['GET'])
+# @permission_classes([IsAuthenticated])
+# def courier_pdf(request, courier_id):
+#     """
+#     Download courier PDF (accessible to admin & assigned technicians)
+#     Returns PDF URL and metadata
+#     """
+#     try:
+#         courier = CourierTransaction.objects.get(id=courier_id)
         
-        # Check permission
-        if not request.user.is_staff and request.user not in courier.technicians.all():
-            return Response(
-                {'error': 'Access denied'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+#         # Check permission
+#         if not request.user.is_staff and request.user not in courier.technicians.all():
+#             return Response(
+#                 {'error': 'Access denied'},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
         
-        if not courier.pdf_file:
-            return Response(
-                {'error': 'PDF not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+#         if not courier.pdf_file:
+#             return Response(
+#                 {'error': 'PDF not found'},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
         
-        # Return PDF URL and metadata for frontend to download
-        pdf_url = request.build_absolute_uri(courier.pdf_file.url)
+#         # Return PDF URL and metadata for frontend to download
+#         pdf_url = request.build_absolute_uri(courier.pdf_file.url)
         
-        return Response({
-            'success': True,
-            'pdf_url': pdf_url,
-            'pdf_file_name': courier.pdf_file.name,
-            'courier_id': courier.courier_id,
-            'courier_info': CourierTransactionSerializer(courier).data
-        }, status=status.HTTP_200_OK)
+#         return Response({
+#             'success': True,
+#             'pdf_url': pdf_url,
+#             'pdf_file_name': courier.pdf_file.name,
+#             'courier_id': courier.courier_id,
+#             'courier_info': CourierTransactionSerializer(courier).data
+#         }, status=status.HTTP_200_OK)
         
-    except CourierTransaction.DoesNotExist:
-        return Response(
-            {'error': 'Courier not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    except Exception as e:
-        logger.error(f"Error fetching courier PDF: {e}")
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+#     except CourierTransaction.DoesNotExist:
+#         return Response(
+#             {'error': 'Courier not found'},
+#             status=status.HTTP_404_NOT_FOUND
+#         )
+#     except Exception as e:
+#         logger.error(f"Error fetching courier PDF: {e}")
+#         return Response(
+#             {'error': str(e)},
+#             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#         )
 
 
 # ==================== TECHNICIAN ENDPOINTS ====================
@@ -596,3 +596,133 @@ def my_courier_history(request):
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def courier_pdf(request, courier_id):
+    """
+    Download courier PDF (accessible to admin & assigned technicians)
+    
+    NOTE: This endpoint is now primarily used by ADMIN users.
+    Technicians generate PDFs on the frontend using React Native expo-print.
+    Keeping this endpoint for backward compatibility and admin usage.
+    """
+    try:
+        courier = CourierTransaction.objects.get(id=courier_id)
+        
+        # Check permission
+        if not request.user.is_staff and request.user not in courier.technicians.all():
+            return Response(
+                {'error': 'Access denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not courier.pdf_file:
+            return Response(
+                {'error': 'PDF not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Return PDF URL and metadata for frontend to download
+        pdf_url = request.build_absolute_uri(courier.pdf_file.url)
+        
+        return Response({
+            'success': True,
+            'pdf_url': pdf_url,
+            'pdf_file_name': courier.pdf_file.name,
+            'courier_id': courier.courier_id,
+            'courier_info': CourierTransactionSerializer(courier).data
+        }, status=status.HTTP_200_OK)
+        
+    except CourierTransaction.DoesNotExist:
+        return Response(
+            {'error': 'Courier not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Error fetching courier PDF: {e}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )        
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def register_technician_stock(request):
+    """
+    GET: Returns list of all users and existing technician stocks
+    POST: Creates a new TechnicianStock object
+    """
+    # Only allow admin users
+    if not request.user.is_staff:
+        return Response(
+            {'error': 'Only admins can register technician stock'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    if request.method == 'GET':
+        # Get all users (technicians)
+        users = User.objects.filter(is_staff=False).values('id', 'username', 'first_name', 'last_name')
+        
+        # Get existing technician stocks
+        existing_stocks = TechnicianStock.objects.select_related('technician').all()
+        stocks_data = [{
+            'id': stock.id,
+            'technician_id': stock.technician.id,
+            'technician_username': stock.technician.username,
+            'sheet_technician_name': stock.sheet_technician_name,
+            'sheet_id': stock.sheet_id,
+            'last_sync': stock.last_sync
+        } for stock in existing_stocks]
+        
+        return Response({
+            'users': list(users),
+            'existing_stocks': stocks_data
+        })
+    
+    elif request.method == 'POST':
+        technician_id = request.data.get('technician_id')
+        sheet_technician_name = request.data.get('sheet_technician_name')
+        sheet_id = request.data.get('sheet_id')
+        
+        # Validation
+        if not technician_id:
+            return Response(
+                {'error': 'Technician ID is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            technician = User.objects.get(id=technician_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Technician not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if technician stock already exists
+        if TechnicianStock.objects.filter(technician=technician).exists():
+            return Response(
+                {'error': 'Stock record already exists for this technician'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create TechnicianStock
+        technician_stock = TechnicianStock.objects.create(
+            technician=technician,
+            sheet_technician_name=sheet_technician_name,
+            sheet_id=sheet_id,
+            last_sync=None
+        )
+        
+        return Response({
+            'message': 'Technician stock registered successfully',
+            'data': {
+                'id': technician_stock.id,
+                'technician_id': technician.id,
+                'technician_username': technician.username,
+                'sheet_technician_name': technician_stock.sheet_technician_name,
+                'sheet_id': technician_stock.sheet_id
+            }
+        }, status=status.HTTP_201_CREATED)        

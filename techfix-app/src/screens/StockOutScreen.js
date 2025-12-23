@@ -42,6 +42,14 @@ export default function StockOutScreen({ navigation }) {
     };
 
     const handleOrder = async (complaint_no) => {
+        console.log('Order button clicked for complaint:', complaint_no);
+        
+        if (!complaint_no || typeof complaint_no !== 'string' || complaint_no.trim() === '') {
+            console.error('Invalid complaint_no:', complaint_no);
+            Alert.alert('Error', 'Invalid complaint number');
+            return;
+        }
+
         Alert.alert(
             'Confirm Order',
             `Are you sure you want to order this item?\nComplaint: ${complaint_no}`,
@@ -51,18 +59,60 @@ export default function StockOutScreen({ navigation }) {
                     text: 'Order',
                     onPress: async () => {
                         try {
-                            const response = await client.post('/stock-out/order/', {
-                                complaint_no: complaint_no
+                            console.log('Sending order request for complaint:', complaint_no);
+                            const payload = { complaint_no: complaint_no };
+                            console.log('Request payload:', JSON.stringify(payload));
+                            
+                            const response = await client.post('/stock-out/order/', payload, {
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
                             });
 
-                            if (response.data.success) {
-                                Alert.alert('Success', response.data.message);
+                            console.log('Order response:', JSON.stringify(response.data));
+                            
+                            if (response.data && response.data.success) {
+                                Alert.alert('Success', response.data.message || 'Item ordered successfully');
                                 fetchStockOutItems(); // Refresh list
+                            } else {
+                                console.error('Unexpected response format:', response.data);
+                                Alert.alert('Error', response.data?.error || 'Failed to process order');
                             }
                         } catch (error) {
-                            console.error('Error ordering item:', error);
-                            const errorMsg = error.response?.data?.error || 'Failed to order item';
-                            Alert.alert('Error', errorMsg);
+                            console.error('Error ordering item:', {
+                                message: error.message,
+                                response: {
+                                    status: error.response?.status,
+                                    data: error.response?.data,
+                                    headers: error.response?.headers,
+                                },
+                                config: {
+                                    url: error.config?.url,
+                                    method: error.config?.method,
+                                    headers: error.config?.headers,
+                                    data: error.config?.data,
+                                },
+                            });
+                            
+                            let errorMessage = 'Failed to order item';
+                            if (error.response) {
+                                // The request was made and the server responded with a status code
+                                // that falls out of the range of 2xx
+                                if (error.response.status === 400) {
+                                    errorMessage = error.response.data?.error || 'Bad request. Please check the complaint number.';
+                                } else if (error.response.status === 401 || error.response.status === 403) {
+                                    errorMessage = 'Authentication failed. Please login again.';
+                                } else if (error.response.status === 404) {
+                                    errorMessage = 'Complaint not found in the system.';
+                                } else if (error.response.status === 500) {
+                                    errorMessage = 'Server error. Please try again later.';
+                                }
+                            } else if (error.request) {
+                                // The request was made but no response was received
+                                errorMessage = 'No response from server. Please check your connection.';
+                            }
+                            
+                            Alert.alert('Error', errorMessage);
                         }
                     }
                 }

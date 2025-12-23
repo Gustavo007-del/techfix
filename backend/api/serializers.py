@@ -8,6 +8,7 @@ from .models import StockOutOrder, StockReceived
 
 
 class TechnicianSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source='user.id', read_only=True)  # Use User ID, not Technician ID
     username = serializers.CharField(source='user.username')
     first_name = serializers.CharField(source='user.first_name')
     last_name = serializers.CharField(source='user.last_name')

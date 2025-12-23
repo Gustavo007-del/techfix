@@ -50,7 +50,7 @@ class SpareRequest(models.Model):
     ]
     
     # Request details
-    complaint_no = models.CharField(max_length=50, unique=True)
+    complaint_no = models.CharField(max_length=50)
     technician = models.ForeignKey(User, on_delete=models.CASCADE, related_name='spare_requests')
     
     # Complaint details (snapshot at request time)
@@ -77,7 +77,7 @@ class SpareRequest(models.Model):
     # Admin action
     approved_by = models.ForeignKey(
         User,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name='approved_spare_requests'
@@ -96,7 +96,7 @@ class StockOutOrder(models.Model):
     """
     Model to track stock-out items that have been ordered
     """
-    complaint_no = models.CharField(max_length=100, unique=True)
+    complaint_no = models.CharField(max_length=100)
     area = models.CharField(max_length=200, blank=True)
     brand_name = models.CharField(max_length=200, blank=True)
     product_code = models.CharField(max_length=100, blank=True)
@@ -108,7 +108,7 @@ class StockOutOrder(models.Model):
     # Tracking fields
     ordered_by = models.ForeignKey(
         User, 
-        on_delete=models.SET_NULL, 
+        on_delete=models.CASCADE, 
         null=True,
         related_name='stock_orders'
     )
@@ -131,7 +131,7 @@ class StockReceived(models.Model):
     """
     Model to track stock-out items that have been received
     """
-    complaint_no = models.CharField(max_length=100, unique=True)
+    complaint_no = models.CharField(max_length=100)
     area = models.CharField(max_length=200, blank=True)
     brand_name = models.CharField(max_length=200, blank=True)
     product_code = models.CharField(max_length=100, blank=True)
@@ -152,7 +152,7 @@ class StockReceived(models.Model):
     # Tracking fields
     received_by = models.ForeignKey(
         User, 
-        on_delete=models.SET_NULL, 
+        on_delete=models.CASCADE, 
         null=True,
         related_name='stock_received'
     )

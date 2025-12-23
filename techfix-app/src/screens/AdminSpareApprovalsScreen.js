@@ -203,7 +203,7 @@ export default function AdminSpareApprovalsScreen({ navigation }) {
           style={[styles.button, styles.rejectBtn]}
           onPress={() => openModal(item, 'reject')}
         >
-          <MaterialIcons name="close-circle" size={18} color={COLORS.white} />
+          <MaterialIcons name="cancel" size={18} color={COLORS.white} />
           <Text style={styles.buttonText}>Reject</Text>
         </TouchableOpacity>
       </View>
@@ -374,7 +374,7 @@ export default function AdminSpareApprovalsScreen({ navigation }) {
                       ) : (
                         <>
                           <MaterialIcons
-                            name="close-circle"
+                            name="cancel"
                             size={20}
                             color={COLORS.white}
                           />

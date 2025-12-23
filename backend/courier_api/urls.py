@@ -23,5 +23,6 @@ urlpatterns = [
     path('technicians/', views.get_technicians, name='get_technicians'),
     path('technicians-for-courier/', views.get_technicians_for_courier, name='technicians_for_courier'),
     path('my-courier-history/', views.my_courier_history, name='my_courier_history'),  # NEW endpoint
+    path('register-technician-stock/', views.register_technician_stock, name='register_technician_stock'),  # NEW
 
 ]

@@ -151,6 +151,18 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.actionButton}
+            onPress={() => navigation.navigate('RegisterTechnicianStock')}
+          >
+            <MaterialIcons name="storage" size={24} color={COLORS.white} />
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Register Technician Stock</Text>
+              <Text style={styles.actionSubtitle}>Link technicians to stock sheets</Text>
+            </View>
+            <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
             onPress={() => navigation.navigate('AdminSpareApprovalsScreen')}
           >
             <MaterialIcons name="check-circle" size={24} color={COLORS.white} />

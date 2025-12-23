@@ -43,6 +43,9 @@ export default function ManageTechniciansScreen({ navigation }) {
   const fetchTechnicians = async () => {
     try {
       const response = await client.get('/technicians/');
+      console.log('=== TECHNICIANS RESPONSE ===');
+      console.log('Full response:', JSON.stringify(response.data, null, 2));
+      console.log('First technician:', response.data[0]);
       setTechnicians(response.data);
     } catch (error) {
       console.log('Error fetching technicians:', error);
@@ -71,6 +74,7 @@ export default function ManageTechniciansScreen({ navigation }) {
 
   const openEditModal = async (techId) => {
     try {
+      console.log(`Opening edit modal for techId: ${techId}`);
       const response = await client.get(`/technicians/${techId}/`);
       setEditingId(techId);
       setFormData({
@@ -129,60 +133,72 @@ export default function ManageTechniciansScreen({ navigation }) {
   };
 
   const handleDelete = (techId, name) => {
-    Alert.alert('Delete Technician', `Delete ${name}?`, [
+    console.log('=== DELETE TECHNICIAN ===');
+    console.log('Tech ID to delete:', techId);
+    console.log('Tech name:', name);
+    console.log('Type of techId:', typeof techId);
+    
+    Alert.alert('Delete Technician', `Delete ${name}?\n\nID: ${techId}`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            await client.delete(`/technicians/${techId}/delete/`);
+            console.log(`Deleting technician with ID: ${techId}`);
+            const response = await client.delete(`/technicians/${techId}/delete/`);
+            console.log('Delete response:', response.data);
             Alert.alert('Success', 'Technician deleted');
             await fetchTechnicians();
           } catch (error) {
-            Alert.alert('Error', 'Failed to delete technician');
+            console.error('Delete error:', error.response?.data || error);
+            Alert.alert('Error', error.response?.data?.error || 'Failed to delete technician');
           }
         },
       },
     ]);
   };
 
-  const renderTechnicianItem = ({ item }) => (
-    <View style={styles.techCard}>
-      <View style={styles.techHeader}>
-        <MaterialIcons name="account-circle" size={40} color={COLORS.primary} />
-        <View style={{ marginLeft: 12, flex: 1 }}>
-          <Text style={styles.name}>{item.first_name} {item.last_name}</Text>
-          <Text style={styles.username}>@{item.username}</Text>
+  const renderTechnicianItem = ({ item, index }) => {
+    console.log(`Rendering tech at index ${index}: ID=${item.id}, Username=${item.username}`);
+    
+    return (
+      <View style={styles.techCard}>
+        <View style={styles.techHeader}>
+          <MaterialIcons name="account-circle" size={40} color={COLORS.primary} />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.name}>{item.first_name} {item.last_name}</Text>
+            <Text style={styles.username}>@{item.username} (ID: {item.id})</Text>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.techInfo}>
+          <MaterialIcons name="phone" size={16} color={COLORS.primary} />
+          <Text style={styles.detail}>{item.phone || 'No phone'}</Text>
+        </View>
+
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.editBtn]}
+            onPress={() => openEditModal(item.id)}
+          >
+            <MaterialIcons name="edit" size={16} color={COLORS.white} />
+            <Text style={styles.actionBtnText}>Edit</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteBtn]}
+            onPress={() => handleDelete(item.id, `${item.first_name} ${item.last_name}`)}
+          >
+            <MaterialIcons name="delete" size={16} color={COLORS.white} />
+            <Text style={styles.actionBtnText}>Delete</Text>
+          </TouchableOpacity>
         </View>
       </View>
-
-      <View style={styles.divider} />
-
-      <View style={styles.techInfo}>
-        <MaterialIcons name="phone" size={16} color={COLORS.primary} />
-        <Text style={styles.detail}>{item.phone || 'No phone'}</Text>
-      </View>
-
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.editBtn]}
-          onPress={() => openEditModal(item.id)}
-        >
-          <MaterialIcons name="edit" size={16} color={COLORS.white} />
-          <Text style={styles.actionBtnText}>Edit</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.deleteBtn]}
-          onPress={() => handleDelete(item.id, `${item.first_name} ${item.last_name}`)}
-        >
-          <MaterialIcons name="delete" size={16} color={COLORS.white} />
-          <Text style={styles.actionBtnText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (

@@ -1,4 +1,7 @@
 # E:\study\techfix\backend\api\views.py
+import logging
+from django.db.models import Q
+from django.db import transaction
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -28,6 +31,7 @@ from datetime import datetime
 RANGE = "Sheet1!A:O"  # includes columns A to O
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # ==================== JWT TOKEN GENERATION ====================
+logger = logging.getLogger(__name__)
 
 def get_tokens_for_user(user):
     """Generate access and refresh tokens for a user"""
@@ -443,28 +447,89 @@ def update_technician(request, technician_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_technician(request, technician_id):
-    """Delete a technician (Admin only)"""
+    """Delete a technician (Admin only) with comprehensive logging"""
+    logger.info(f"Delete technician request received for ID: {technician_id} by user: {request.user.id}")
+    
     if not request.user.is_staff:
+        logger.warning(f"Unauthorized delete attempt by user {request.user.id} (non-admin)")
         return Response(
             {'error': 'Admin access required'},
             status=status.HTTP_403_FORBIDDEN
         )
     
     try:
-        user = User.objects.get(id=technician_id)
-    except User.DoesNotExist:
-        return Response(
-            {'error': 'Technician not found'},
-            status=status.HTTP_404_NOT_FOUND
+        # Log the raw technician_id and its type
+        logger.debug(f"Raw technician_id: {technician_id}, type: {type(technician_id)}")
+        
+        # Convert technician_id to integer
+        try:
+            technician_id = int(technician_id)
+            logger.debug(f"Converted technician_id: {technician_id}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid technician_id format: {technician_id}. Error: {str(e)}")
+            return Response(
+                {'error': 'Invalid technician ID format'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the user to be deleted
+        try:
+            user_to_delete = User.objects.get(id=technician_id)
+            logger.info(f"Found user to delete: {user_to_delete.username} (ID: {user_to_delete.id})")
+        except User.DoesNotExist:
+            logger.error(f"User with ID {technician_id} not found")
+            return Response(
+                {'error': 'Technician not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Prevent self-deletion
+        if user_to_delete.id == request.user.id:
+            logger.warning(f"User {request.user.id} attempted to delete their own account")
+            return Response(
+                {'error': 'You cannot delete your own account'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Check for active courier transactions
+        from courier_api.models import CourierTransaction
+        active_transactions = CourierTransaction.objects.filter(
+            Q(created_by=user_to_delete) | 
+            Q(technicians=user_to_delete)
         )
-    
-    username = user.username
-    user.delete()
-    
-    return Response({
-        'success': True,
-        'message': f'Technician {username} deleted successfully'
-    }, status=status.HTTP_200_OK)
+        
+        if active_transactions.exists():
+            transaction_ids = list(active_transactions.values_list('id', flat=True))
+            logger.warning(
+                f"Cannot delete user {user_to_delete.id} - found {active_transactions.count()} "
+                f"active transactions: {transaction_ids}"
+            )
+            return Response(
+                {'error': 'Cannot delete technician with active courier transactions'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Log all related data before deletion
+        logger.info(f"User to be deleted - Username: {user_to_delete.username}, "
+                   f"Email: {user_to_delete.email}, "
+                   f"Date Joined: {user_to_delete.date_joined}")
+        
+        # Delete the user
+        username = user_to_delete.username
+        user_to_delete.delete()
+        logger.info(f"Successfully deleted user {technician_id}")
+        
+        return Response({
+            'success': True,
+            'message': f'Technician {username} deleted successfully'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.exception(f"Error deleting technician {technician_id}: {str(e)}")
+        return Response(
+            {'error': 'An error occurred while deleting the technician'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1188,29 +1253,31 @@ def mark_stock_as_ordered(request):
     Updates Google Sheet (CC REMARKS column X to "ORDERED")
     Saves order details to database
     """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting mark_stock_as_ordered with data: {request.data}")
+    
     try:
         if not request.user.is_staff:
+            error_msg = "Non-admin user attempted to access mark_stock_as_ordered"
+            logger.warning(error_msg)
             return Response({
                 "success": False,
                 "error": "Only admin users can access this endpoint"
             }, status=status.HTTP_403_FORBIDDEN)
         
         complaint_no = request.data.get("complaint_no")
+        logger.info(f"Processing order for complaint: {complaint_no}")
         
         if not complaint_no:
+            error_msg = "No complaint_no provided in request"
+            logger.error(error_msg)
             return Response({
                 "success": False,
                 "error": "complaint_no is required"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if already ordered
-        if StockOutOrder.objects.filter(complaint_no=complaint_no).exists():
-            return Response({
-                "success": False,
-                "error": "This item has already been ordered"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Update Google Sheet
+        # Get the row data from Google Sheet first
+        logger.info("Attempting to connect to Google Sheet...")
         try:
             creds = Credentials.from_service_account_file(
                 "service.json",
@@ -1226,34 +1293,43 @@ def mark_stock_as_ordered(request):
             # Get the current row data to save in DB
             row = sheet.row_values(row_index)
             
-            # Update CC REMARKS to "ORDERED" (column X = 24)
-            sheet.update_cell(row_index, 24, 'ORDERED')
-            
-        except gspread.exceptions.CellNotFound:
+            # First save to database within a transaction
+            logger.info("Starting database transaction...")
+            with transaction.atomic():
+                try:
+                    stock_order = StockOutOrder.objects.create(
+                        complaint_no=complaint_no,
+                        area=row[5] if len(row) > 5 else "",
+                        brand_name=row[6] if len(row) > 6 else "",
+                        product_code=row[7] if len(row) > 7 else "",
+                        part_name=row[9] if len(row) > 9 else "",
+                        district=row[15] if len(row) > 15 else "",
+                        mrp=row[19] if len(row) > 19 else "",
+                        cc_remarks='ORDERED',
+                        ordered_by=request.user,
+                        ordered_at=timezone.now(),
+                        ordered_date=timezone.now().date()
+                    )
+                    logger.info(f"Created StockOutOrder with ID: {stock_order.id}")
+                    
+                    # Then update Google Sheet
+                    logger.info("Updating Google Sheet...")
+                    sheet.update_cell(row_index, 24, 'ORDERED')
+                    logger.info("Successfully updated Google Sheet")
+                    
+                except Exception as e:
+                    error_msg = f"Error in transaction: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    raise
+                
+        except Exception as e:
+            # If any error occurs, the database transaction will be rolled back automatically
+            error_msg = f"Failed to process order for {complaint_no}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
             return Response({
                 "success": False,
-                "error": f"Complaint {complaint_no} not found in sheet"
-            }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as sheet_error:
-            return Response({
-                "success": False,
-                "error": f"Failed to update Google Sheet: {str(sheet_error)}"
+                "error": f"Failed to process order: {str(e)}"
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Save to database
-        stock_order = StockOutOrder.objects.create(
-            complaint_no=complaint_no,
-            area=row[5] if len(row) > 5 else "",
-            brand_name=row[6] if len(row) > 6 else "",
-            product_code=row[7] if len(row) > 7 else "",
-            part_name=row[9] if len(row) > 9 else "",
-            district=row[15] if len(row) > 15 else "",
-            mrp=row[19] if len(row) > 19 else "",
-            cc_remarks='ORDERED',
-            ordered_by=request.user,
-            ordered_at=timezone.now(),
-            ordered_date=timezone.now().date()
-        )
         
         serializer = StockOutOrderSerializer(stock_order)
         return Response({

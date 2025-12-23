@@ -36,6 +36,7 @@ import ManageTechniciansScreen from './src/screens/ManageTechniciansScreen';
 import AdminAttendanceRecordScreen from './src/screens/AdminAttendanceRecordScreen';
 import AdminSpareApprovalsScreen from './src/screens/AdminSpareApprovalsScreen';
 import AttendanceListScreen from './src/screens/AttendanceListScreen';
+import RegisterTechnicianStockScreen from './src/screens/RegisterTechnicianStockScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -247,6 +248,7 @@ function DashboardStackScreen() {
             <Stack.Screen name="AttendanceList" component={AttendanceListScreen} />
             <Stack.Screen name="AdminAttendanceRecordScreen" component={AdminAttendanceRecordScreen} />
             <Stack.Screen name="ManageTechnicians" component={ManageTechniciansScreen} />
+            <Stack.Screen name="RegisterTechnicianStock" component={RegisterTechnicianStockScreen} />
             <Stack.Screen name="TechnicianList" component={TechnicianListScreen} />
             <Stack.Screen name="AdminSpareApprovalsScreen" component={AdminSpareApprovalsScreen} />
             <Stack.Screen name="CreateCourier" component={CreateCourierScreen} />

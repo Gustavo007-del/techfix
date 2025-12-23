@@ -64,13 +64,10 @@ export default function AttendanceScreen({ navigation }) {
   const [checkingOut, setCheckingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [time, setTime] = useState(new Date());
-  const [locationStatus, setLocationStatus] = useState('Ready');
-  const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const { state, signOut } = useContext(AuthContext);
 
 
   useEffect(() => {
-    initializeLocation();
     fetchAttendanceStatus();
 
 
@@ -82,25 +79,6 @@ export default function AttendanceScreen({ navigation }) {
 
     return () => clearInterval(timer);
   }, []);
-
-
-  const initializeLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationStatus('Location permission denied');
-        return;
-      }
-
-
-      // Enable high accuracy
-      await Location.enableNetworkProviderAsync();
-      setLocationStatus('Location ready (High Accuracy)');
-    } catch (error) {
-      console.error('Location init error:', error);
-      setLocationStatus('Location services unavailable');
-    }
-  };
 
 
   const fetchAttendanceStatus = async () => {
@@ -123,16 +101,11 @@ export default function AttendanceScreen({ navigation }) {
 
 
     try {
-      setLocationStatus('Getting GPS location...');
-
-
       // First, try to get last known location (instant)
       try {
         const lastLocation = await Location.getLastKnownPositionAsync();
         if (lastLocation && lastLocation.coords) {
           clearTimeout(timeout);
-          setGpsAccuracy(lastLocation.coords.accuracy ? lastLocation.coords.accuracy.toFixed(1) : 'Unknown');
-         
           resolve({
             latitude: lastLocation.coords.latitude,
             longitude: lastLocation.coords.longitude,
@@ -157,7 +130,6 @@ export default function AttendanceScreen({ navigation }) {
 
 
       const accuracy = location.coords.accuracy;
-      setGpsAccuracy(accuracy ? accuracy.toFixed(1) : 'Unknown');
 
 
       resolve({
@@ -180,9 +152,6 @@ export default function AttendanceScreen({ navigation }) {
 
 
     setCheckingIn(true);
-    setLocationStatus('Getting location...');
-
-
     try {
       const location = await getCurrentLocation();
 
@@ -195,15 +164,10 @@ export default function AttendanceScreen({ navigation }) {
 
       if (response.data.success) {
         setAttendance(response.data.data);
-        setLocationStatus('Check-in successful!');
-        Alert.alert(
-          '✓ Check-in Successful',
-          `Location accuracy: ${gpsAccuracy}m\n\nLatitude: ${location.latitude.toFixed(6)}\nLongitude: ${location.longitude.toFixed(6)}`
-        );
+        Alert.alert('✓ Check-in Successful');
       }
     } catch (error) {
       console.error('Check-in error:', error);
-      setLocationStatus('Check-in failed');
       Alert.alert(
         'Check-in Failed',
         error.response?.data?.error || error.message || 'Failed to check in'
@@ -219,9 +183,6 @@ export default function AttendanceScreen({ navigation }) {
 
 
     setCheckingOut(true);
-    setLocationStatus('Getting location...');
-
-
     try {
       const location = await getCurrentLocation();
 
@@ -234,15 +195,10 @@ export default function AttendanceScreen({ navigation }) {
 
       if (response.data.success) {
         setAttendance(response.data.data);
-        setLocationStatus('Check-out successful!');
-        Alert.alert(
-          '✓ Check-out Successful',
-          `Location accuracy: ${gpsAccuracy}m\n\nLatitude: ${location.latitude.toFixed(6)}\nLongitude: ${location.longitude.toFixed(6)}`
-        );
+        Alert.alert('✓ Check-out Successful');
       }
     } catch (error) {
       console.error('Check-out error:', error);
-      setLocationStatus('Check-out failed');
       Alert.alert(
         'Check-out Failed',
         error.response?.data?.error || error.message || 'Failed to check out'
@@ -327,82 +283,38 @@ export default function AttendanceScreen({ navigation }) {
         </View>
 
 
-        {/* GPS Status */}
-        <View style={styles.gpsStatusCard}>
-          <MaterialIcons
-            name={gpsAccuracy ? 'gps-fixed' : 'gps-not-fixed'}
-            size={20}
-            color={gpsAccuracy ? COLORS.success : COLORS.warning}
-          />
-          <View style={{ marginLeft: 12, flex: 1 }}>
-            <Text style={styles.gpsStatusLabel}>GPS Status</Text>
-            <Text style={styles.gpsStatusValue}>{locationStatus}</Text>
-            {gpsAccuracy && (
-              <Text style={styles.gpsAccuracy}>Accuracy: ±{gpsAccuracy}m</Text>
-            )}
-          </View>
-        </View>
-
-
         {/* Status Card */}
         <View style={styles.statusCard}>
           <Text style={styles.statusTitle}>Today's Status</Text>
 
 
           {isCheckedIn ? (
-            <>
-              <View style={styles.statusRow}>
-                <MaterialIcons name="check-circle" size={24} color={COLORS.success} />
-                <View style={styles.statusInfo}>
-                  <Text style={styles.statusLabel}>Check-In Time (IST)</Text>
-                  <Text style={styles.statusValue}>
-                    {formatUtcTimeToLocalIST(isCheckedIn)}
-                  </Text>
-                </View>
+            <View style={styles.statusRow}>
+              <MaterialIcons name="check-circle" size={24} color={COLORS.success} />
+              <View style={styles.statusInfo}>
+                <Text style={styles.statusLabel}>Check-In Time (IST)</Text>
+                <Text style={styles.statusValue}>
+                  {formatUtcTimeToLocalIST(isCheckedIn)}
+                </Text>
               </View>
-              <View style={styles.statusRow}>
-                <MaterialIcons name="location-on" size={24} color={COLORS.primary} />
-                <View style={styles.statusInfo}>
-                  <Text style={styles.statusLabel}>Check-In Location</Text>
-                  <Text style={styles.statusValue}>
-                    {attendance?.check_in_lat
-                      ? `${attendance.check_in_lat.toFixed(6)}, ${attendance.check_in_lng.toFixed(6)}`
-                      : 'N/A'}
-                  </Text>
-                </View>
-              </View>
-            </>
+            </View>
           ) : (
             <Text style={styles.noDataText}>Not checked in yet</Text>
           )}
 
 
           {isCheckedOut && (
-            <>
-              <View style={styles.statusRow}>
-                <MaterialIcons name="check-circle" size={24} color={COLORS.danger} />
-                <View style={styles.statusInfo}>
-                  <Text style={styles.statusLabel}>Check-Out Time (IST)</Text>
-                  <Text style={styles.statusValue}>
-                    {formatUtcTimeToLocalIST(isCheckedOut)}
-                  </Text>
-                </View>
+            <View style={styles.statusRow}>
+              <MaterialIcons name="check-circle" size={24} color={COLORS.danger} />
+              <View style={styles.statusInfo}>
+                <Text style={styles.statusLabel}>Check-Out Time (IST)</Text>
+                <Text style={styles.statusValue}>
+                  {formatUtcTimeToLocalIST(isCheckedOut)}
+                </Text>
               </View>
-              <View style={styles.statusRow}>
-                <MaterialIcons name="location-on" size={24} color={COLORS.danger} />
-                <View style={styles.statusInfo}>
-                  <Text style={styles.statusLabel}>Check-Out Location</Text>
-                  <Text style={styles.statusValue}>
-                    {attendance?.check_out_lat
-                      ? `${attendance.check_out_lat.toFixed(6)}, ${attendance.check_out_lng.toFixed(6)}`
-                      : 'N/A'}
-                  </Text>
-                </View>
-              </View>
-            </>
+            </View>
           )}
         </View>
-
 
         {/* Action Buttons */}
         <View style={styles.buttonContainer}>
@@ -523,39 +435,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.dark,
     marginTop: 8,
-  },
-  gpsStatusCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  gpsStatusLabel: {
-    fontSize: 12,
-    color: COLORS.gray,
-    fontWeight: '500',
-  },
-  gpsStatusValue: {
-    fontSize: 14,
-    color: COLORS.dark,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  gpsAccuracy: {
-    fontSize: 11,
-    color: COLORS.success,
-    marginTop: 2,
-    fontWeight: '500',
   },
   statusCard: {
     backgroundColor: COLORS.white,

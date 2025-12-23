@@ -1,24 +1,28 @@
-import React, { useState, useEffect } from 'react';
+// E:\study\techfix\techfix-app\src\screens\TechCourierScreen.js
+import React, { useState, useEffect, useContext } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
-    ActivityIndicator, RefreshControl, Alert, Linking
+    ActivityIndicator, RefreshControl, Alert
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../theme/colors';
 import client, { API_ENDPOINTS } from '../api/client';
+import { AuthContext } from '../context/AuthContext';
+import { generateTechnicianCourierPDF, printTechnicianCourierPDF } from '../utils/TechnicianPDFGenerator';
 
 export default function TechCourierScreen({ navigation }) {
     const insets = useSafeAreaInsets();
+    const { state } = useContext(AuthContext);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [couriers, setCouriers] = useState([]);
     const [expandedId, setExpandedId] = useState(null);
+    const [generatingPDF, setGeneratingPDF] = useState(null);
 
     const fetchCouriers = async () => {
         try {
             setLoading(true);
-            // Use the new MY_COURIER_HISTORY endpoint instead of PENDING_COURIERS
             const response = await client.get(API_ENDPOINTS.MY_COURIER_HISTORY);
             
             if (response.data.success) {
@@ -42,28 +46,70 @@ export default function TechCourierScreen({ navigation }) {
         setRefreshing(false);
     };
 
-    const handleDownloadPDF = async (courierId) => {
-        try {
-            Alert.alert('Downloading', 'Please wait...');
-            
-            const response = await client.get(API_ENDPOINTS.COURIER_PDF(courierId));
-            
-            if (response.data.success && response.data.pdf_url) {
-                const canOpen = await Linking.canOpenURL(response.data.pdf_url);
-                if (canOpen) {
-                    await Linking.openURL(response.data.pdf_url);
-                } else {
-                    Alert.alert('Error', 'Cannot open PDF. URL: ' + response.data.pdf_url);
+    const getTechnicianName = () => {
+        // Handle different user object structures
+        if (state.user) {
+            if (typeof state.user === 'string') {
+                try {
+                    const userObj = JSON.parse(state.user);
+                    return userObj.first_name || userObj.username || 'Technician';
+                } catch (e) {
+                    return state.user;
                 }
-            } else {
-                Alert.alert('Error', 'PDF not available');
+            } else if (typeof state.user === 'object') {
+                return state.user.first_name || state.user.username || 'Technician';
+            }
+        }
+        return 'Technician';
+    };
+
+    const handleDownloadPDF = async (courier) => {
+        try {
+            setGeneratingPDF(courier.id);
+
+            const technicianName = getTechnicianName();
+
+            const result = await generateTechnicianCourierPDF(courier, technicianName);
+
+            if (result.success) {
+                Alert.alert(
+                    'Success',
+                    'PDF generated successfully!',
+                    [{ text: 'OK' }]
+                );
             }
         } catch (error) {
-            console.error('Error downloading PDF:', error);
+            console.error('Error generating PDF:', error);
             Alert.alert(
-                'Error', 
-                error.response?.data?.error || 'Failed to download PDF'
+                'Error',
+                'Failed to generate PDF. Please try again.'
             );
+        } finally {
+            setGeneratingPDF(null);
+        }
+    };
+
+    const handlePrintPDF = async (courier) => {
+        try {
+            setGeneratingPDF(courier.id);
+
+            const technicianName = getTechnicianName();
+
+            await printTechnicianCourierPDF(courier, technicianName);
+
+            Alert.alert(
+                'Success',
+                'Print dialog opened',
+                [{ text: 'OK' }]
+            );
+        } catch (error) {
+            console.error('Error printing PDF:', error);
+            Alert.alert(
+                'Error',
+                'Failed to print PDF. Please try again.'
+            );
+        } finally {
+            setGeneratingPDF(null);
         }
     };
 
@@ -109,6 +155,7 @@ export default function TechCourierScreen({ navigation }) {
     const renderCourierItem = ({ item }) => {
         const isExpanded = expandedId === item.id;
         const totalAmount = calculateTotal(item.items || []);
+        const isGenerating = generatingPDF === item.id;
 
         return (
             <View style={styles.courierCard}>
@@ -203,16 +250,38 @@ export default function TechCourierScreen({ navigation }) {
                             <Text style={styles.totalAmount}>₹{totalAmount.toFixed(2)}</Text>
                         </View>
 
-                        {/* PDF Download Button */}
-                        {item.pdf_file && (
+                        {/* PDF Action Buttons */}
+                        <View style={styles.pdfButtonsContainer}>
                             <TouchableOpacity
-                                style={styles.pdfButton}
-                                onPress={() => handleDownloadPDF(item.id)}
+                                style={[styles.pdfButton, styles.downloadButton]}
+                                onPress={() => handleDownloadPDF(item)}
+                                disabled={isGenerating}
                             >
-                                <MaterialIcons name="picture-as-pdf" size={20} color={COLORS.white} />
-                                <Text style={styles.pdfButtonText}>Download PDF</Text>
+                                {isGenerating ? (
+                                    <ActivityIndicator size="small" color={COLORS.white} />
+                                ) : (
+                                    <>
+                                        <MaterialIcons name="picture-as-pdf" size={20} color={COLORS.white} />
+                                        <Text style={styles.pdfButtonText}>Download PDF</Text>
+                                    </>
+                                )}
                             </TouchableOpacity>
-                        )}
+
+                            <TouchableOpacity
+                                style={[styles.pdfButton, styles.printButton]}
+                                onPress={() => handlePrintPDF(item)}
+                                disabled={isGenerating}
+                            >
+                                {isGenerating ? (
+                                    <ActivityIndicator size="small" color={COLORS.white} />
+                                ) : (
+                                    <>
+                                        <MaterialIcons name="print" size={20} color={COLORS.white} />
+                                        <Text style={styles.pdfButtonText}>Print</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
             </View>
@@ -369,18 +438,37 @@ const styles = StyleSheet.create({
     },
     totalLabel: { fontSize: 16, fontWeight: '700', color: COLORS.dark },
     totalAmount: { fontSize: 18, fontWeight: '700', color: COLORS.success },
+    pdfButtonsContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 16,
+    },
     pdfButton: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#d32f2f',
         paddingVertical: 12,
         borderRadius: 8,
         gap: 8,
-        marginTop: 16,
     },
-    pdfButtonText: { color: COLORS.white, fontSize: 14, fontWeight: '600' },
-    noItemsText: { textAlign: 'center', color: COLORS.gray, fontSize: 14, padding: 20 },
+    downloadButton: {
+        backgroundColor: '#d32f2f',
+    },
+    printButton: {
+        backgroundColor: '#1976d2',
+    },
+    pdfButtonText: { 
+        color: COLORS.white, 
+        fontSize: 14, 
+        fontWeight: '600' 
+    },
+    noItemsText: { 
+        textAlign: 'center', 
+        color: COLORS.gray, 
+        fontSize: 14, 
+        padding: 20 
+    },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
